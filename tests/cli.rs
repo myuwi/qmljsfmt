@@ -35,5 +35,8 @@ fn rejects_invalid_qml_without_emitting_stdout() {
 
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(!output.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "invalid QML document\n"
+    );
 }
