@@ -1,4 +1,6 @@
 use std::io;
+use std::process::ExitStatus;
+use std::string::FromUtf8Error;
 
 use thiserror::Error;
 
@@ -15,6 +17,19 @@ pub enum Error {
 
     #[error("invalid QML document")]
     InvalidQml,
+
+    #[error("failed to {operation}")]
+    OxfmtIo {
+        operation: &'static str,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("oxfmt failed with {status}\n{stderr}")]
+    OxfmtFailed { status: ExitStatus, stderr: String },
+
+    #[error("oxfmt produced invalid UTF-8")]
+    InvalidOxfmtOutput(#[source] FromUtf8Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
@@ -8,6 +9,13 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
+
+            let mut cause = error.source();
+            while let Some(error) = cause {
+                eprintln!("  caused by: {error}");
+                cause = error.source();
+            }
+
             ExitCode::FAILURE
         }
     }

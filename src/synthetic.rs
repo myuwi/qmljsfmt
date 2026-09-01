@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::fragments::{Fragment, FragmentKind};
 
-const DEFAULT_INDENT_WIDTH: usize = 4;
+pub(crate) const DEFAULT_INDENT_WIDTH: usize = 4;
 const MARKER_PREFIX: &str = "__qmljsfmt";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,11 +72,10 @@ fn write_fragment(
 
     match fragment.kind {
         FragmentKind::Expression => {
-            // Parentheses keep sequence expressions from splitting the property, and cost
-            // two of the placeholder's columns so the line keeps its original width.
-            // TODO: This assumes Oxfmt keeps the value on the placeholder's line. A
-            // line comment in the trivia, or a value too long to fit, moves the
-            // parentheses onto their own line and leaves the placeholder two narrow.
+            // Parentheses keep sequence expressions from splitting the property.
+            // TODO: Width compensation assumes Oxfmt keeps the value and the synthetic
+            // punctuation on one line. If it wraps them, the compensation applies to
+            // the wrong line.
             let (open, close, parens_width) = if fragment.parenthesize {
                 ("(", ")", 2)
             } else {
