@@ -69,6 +69,8 @@ fn write_fragment(
     let leading_trivia = &source[fragment.replacement_start..fragment.range.start];
 
     open_scopes(output, outer_depth, indentation);
+    write_indent(output, outer_depth, indentation);
+    write_section_delimiter(output, marker, "start");
 
     match fragment.kind {
         FragmentKind::Expression => {
@@ -81,14 +83,23 @@ fn write_fragment(
             } else {
                 ("", "", 0)
             };
+            let scaffold_width = if leading_trivia.contains(['\n', '\r'])
+                || fragment_source.contains(['\n', '\r'])
+            {
+                0
+            } else {
+                // Reserve columns for same-line synthetic punctuation so the total line
+                // width matches QML.
+                parens_width + 1
+            };
 
             write_indent(output, outer_depth, indentation);
             writeln!(output, "const {marker} = {{").unwrap();
             write_indent(output, qml_indent, indentation);
             let prefix_width = binding_prefix_width(source, fragment);
-            write_binding_prefix_placeholder(output, prefix_width.saturating_sub(parens_width));
+            write_binding_prefix_placeholder(output, prefix_width.saturating_sub(scaffold_width));
             output.push_str(leading_trivia);
-            writeln!(output, "{open}{fragment_source}{close}").unwrap();
+            writeln!(output, "{open}{fragment_source}{close},").unwrap();
             write_indent(output, outer_depth, indentation);
             output.push_str("};\n");
         }
@@ -120,7 +131,13 @@ fn write_fragment(
         }
     }
 
+    write_indent(output, outer_depth, indentation);
+    write_section_delimiter(output, marker, "end");
     close_scopes(output, outer_depth, indentation);
+}
+
+fn write_section_delimiter(output: &mut String, marker: &str, boundary: &str) {
+    writeln!(output, "/* {marker}_{boundary} */").unwrap();
 }
 
 fn open_scopes(output: &mut String, count: usize, indentation: Indentation) {
@@ -146,7 +163,7 @@ fn write_indent(output: &mut String, depth: usize, indentation: Indentation) {
     output.extend(std::iter::repeat_n(character, count));
 }
 
-/// Sized like the QML binding prefix through its colon.
+/// Writes a property or label placeholder using the remaining width budget.
 fn write_binding_prefix_placeholder(output: &mut String, width: usize) {
     // `_:` is the narrowest form that parses as a property key or a label.
     let underscores = width.saturating_sub(1).max(1);
@@ -260,9 +277,11 @@ mod tests {
             document(source),
             Document {
                 source: indoc! {r#"
+                    /* __qmljsfmt_0_start */
                     const __qmljsfmt_0 = {
-                        _____: parent.width+1
+                        ____: parent.width+1,
                     };
+                    /* __qmljsfmt_0_end */
                 "#}
                 .to_owned(),
                 indentation: Indentation::Spaces(4),
@@ -288,23 +307,31 @@ mod tests {
         let synthetic = document(source).source;
 
         let expected = indoc! {r#"
+            /* __qmljsfmt_0_start */
             const __qmljsfmt_0 = {
-                _____: parent.width+1
+                ____: parent.width+1,
             };
+            /* __qmljsfmt_0_end */
 
+            /* __qmljsfmt_1_start */
             function __qmljsfmt_1() {
                 _________: if (ready) activate()
             }
+            /* __qmljsfmt_1_end */
 
             {
+                /* __qmljsfmt_2_start */
                 function __qmljsfmt_2() {
                     activate()
                 }
+                /* __qmljsfmt_2_end */
             }
 
+            /* __qmljsfmt_3_start */
             __qmljsfmt_3: {
                 function activate(): void { console.log("active") }
             }
+            /* __qmljsfmt_3_end */
         "#};
 
         assert_eq!(synthetic, expected);
@@ -328,9 +355,11 @@ mod tests {
             synthetic.source,
             indoc! {r#"
                 {
+                    /* __qmljsfmt_0_start */
                     const __qmljsfmt_0 = {
-                        _____: parent.width+1
+                        ____: parent.width+1,
                     };
+                    /* __qmljsfmt_0_end */
                 }
             "#}
         );
@@ -356,9 +385,11 @@ mod tests {
             indoc! {r#"
                 {
                     {
+                        /* __qmljsfmt_0_start */
                         const __qmljsfmt_0 = {
-                            _____: parent.width+1
+                            ____: parent.width+1,
                         };
+                        /* __qmljsfmt_0_end */
                     }
                 }
             "#}
@@ -380,9 +411,11 @@ mod tests {
         assert_eq!(
             synthetic.source,
             indoc! {"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
-                \t_____: parent.width+1
+                \t____: parent.width+1,
                 };
+                /* __qmljsfmt_0_end */
             "}
         );
     }
@@ -402,9 +435,11 @@ mod tests {
         assert_eq!(
             synthetic.source,
             indoc! {r#"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
-                    _____: parent.width+1
+                    ____: parent.width+1,
                 };
+                /* __qmljsfmt_0_end */
             "#}
         );
     }
@@ -423,9 +458,11 @@ mod tests {
         assert_eq!(
             synthetic,
             indoc! {r#"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
-                    _______: (prepare(), activate())
+                    ______: (prepare(), activate()),
                 };
+                /* __qmljsfmt_0_end */
             "#}
         );
         assert_eq!(
@@ -446,8 +483,8 @@ mod tests {
         let synthetic = document(source).source;
 
         assert_eq!(
-            column_of(source, "model.count"),
-            column_of(&synthetic, "model.count")
+            line_width(source, "model.count"),
+            line_width(&synthetic, "model.count")
         );
     }
 
@@ -464,10 +501,12 @@ mod tests {
         assert_eq!(
             document(source).source,
             indoc! {r#"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
                     __________________:
-                        model.count+1
+                        model.count+1,
                 };
+                /* __qmljsfmt_0_end */
             "#}
         );
     }
@@ -487,9 +526,11 @@ mod tests {
         assert_eq!(
             synthetic,
             indoc! {r#"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
-                    ________________: parent.width+1
+                    _______________: parent.width+1,
                 };
+                /* __qmljsfmt_0_end */
             "#}
         );
         assert_eq!(
@@ -512,10 +553,12 @@ mod tests {
         assert_eq!(
             document(source).source,
             indoc! {r#"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
                     _____: /* keep this */
-                        parent.width+1
+                        parent.width+1,
                 };
+                /* __qmljsfmt_0_end */
             "#}
         );
     }
@@ -549,18 +592,38 @@ mod tests {
         assert_eq!(
             document(source).source,
             indoc! {r#"
+                /* __qmljsfmt_0_start */
                 const __qmljsfmt_0 = {
                     ____________________: `first
                   significant whitespace
-                last`
+                last`,
                 };
+                /* __qmljsfmt_0_end */
             "#}
         );
     }
 
-    fn column_of(source: &str, needle: &str) -> usize {
-        let line = line_containing(source, needle);
-        line[..line.find(needle).unwrap()].chars().count()
+    #[test]
+    fn delimiters_survive_formatting() {
+        let source = indoc! {r#"
+            import QtQuick
+
+            Item {
+                width: parent.width+1
+            }
+        "#};
+        let synthetic = document(source);
+
+        assert_eq!(
+            crate::oxfmt::format(&synthetic.source, synthetic.indentation).unwrap(),
+            indoc! {r#"
+                /* __qmljsfmt_0_start */
+                const __qmljsfmt_0 = {
+                    ____: parent.width + 1,
+                };
+                /* __qmljsfmt_0_end */
+            "#}
+        );
     }
 
     fn line_width(source: &str, needle: &str) -> usize {
