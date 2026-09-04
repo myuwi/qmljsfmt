@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
-use super::{Document, Indentation};
-use crate::fragments::{Fragment, FragmentKind};
+use super::{Document, Indentation, Section, SectionKind};
+use crate::fragments::{ExpressionKind, Fragment, FragmentKind};
 
 const MARKER_PREFIX: &str = "__qmljsfmt";
 
@@ -9,6 +9,7 @@ pub(super) fn encode(source: &str, tree: &tree_sitter::Tree, fragments: &[Fragme
     let indentation = infer_indentation(source, tree);
     let marker_prefix = unique_marker_prefix(source);
     let mut synthetic = String::new();
+    let mut sections = Vec::with_capacity(fragments.len());
 
     for (index, fragment) in fragments.iter().enumerate() {
         if index > 0 {
@@ -16,13 +17,30 @@ pub(super) fn encode(source: &str, tree: &tree_sitter::Tree, fragments: &[Fragme
         }
 
         let marker = format!("{marker_prefix}_{index}");
-        write_fragment(&mut synthetic, source, fragment, &marker, indentation);
+        let kind = section_kind(fragment.kind);
+        write_fragment(&mut synthetic, source, fragment, kind, &marker, indentation);
+        sections.push(Section {
+            kind,
+            replacement_range: fragment.replacement_start..fragment.range.end,
+        });
     }
 
     Document {
         source: synthetic,
         indentation,
         marker_prefix,
+        sections,
+    }
+}
+
+fn section_kind(kind: FragmentKind) -> SectionKind {
+    match kind {
+        FragmentKind::Expression(expression_kind) => SectionKind::Expression {
+            scaffold_parentheses: expression_kind == ExpressionKind::Sequence,
+        },
+        FragmentKind::BindingBlockContents => SectionKind::BindingBlockContents,
+        FragmentKind::BindingStatement => SectionKind::BindingStatement,
+        FragmentKind::FunctionDeclaration => SectionKind::FunctionDeclaration,
     }
 }
 
@@ -30,6 +48,7 @@ fn write_fragment(
     output: &mut String,
     source: &str,
     fragment: &Fragment,
+    kind: SectionKind,
     marker: &str,
     indentation: Indentation,
 ) {
@@ -45,9 +64,9 @@ fn write_fragment(
     let starts_on_later_line = leading_trivia.contains(['\n', '\r']);
     let payload_indent =
         indent_depth_at(source, fragment.range.start, indentation).unwrap_or(qml_indent);
-    let outer_depth = match fragment.kind {
-        FragmentKind::BindingBlockContents => qml_indent,
-        FragmentKind::BindingStatement if starts_on_later_line => payload_indent.saturating_sub(1),
+    let outer_depth = match kind {
+        SectionKind::BindingBlockContents => qml_indent,
+        SectionKind::BindingStatement if starts_on_later_line => payload_indent.saturating_sub(1),
         _ => qml_indent - 1,
     };
 
@@ -55,13 +74,15 @@ fn write_fragment(
     write_indent(output, outer_depth, indentation);
     writeln!(output, "/* {marker}_start */").unwrap();
 
-    match fragment.kind {
-        FragmentKind::Expression => {
+    match kind {
+        SectionKind::Expression {
+            scaffold_parentheses,
+        } => {
             // Parentheses keep sequence expressions from splitting the assignment.
             // TODO: Width compensation assumes Oxfmt keeps the value and the synthetic
             // punctuation on one line. If it wraps them, the compensation applies to
             // the wrong line.
-            let (open, close, parens_width) = if fragment.parenthesize {
+            let (open, close, parens_width) = if scaffold_parentheses {
                 ("(", ")", 2)
             } else {
                 ("", "", 0)
@@ -89,13 +110,13 @@ fn write_fragment(
             write_indent(output, outer_depth, indentation);
             output.push_str("}\n");
         }
-        FragmentKind::BindingBlockContents => {
+        SectionKind::BindingBlockContents => {
             write_indent(output, qml_indent, indentation);
             write!(output, "function {marker}() {{").unwrap();
             output.push_str(fragment_source);
             output.push_str("}\n");
         }
-        FragmentKind::BindingStatement => {
+        SectionKind::BindingStatement => {
             write_indent(output, outer_depth, indentation);
             if starts_on_later_line {
                 write!(output, "function {marker}() {{").unwrap();
@@ -110,7 +131,7 @@ fn write_fragment(
             write_indent(output, outer_depth, indentation);
             output.push_str("}\n");
         }
-        FragmentKind::FunctionDeclaration => {
+        SectionKind::FunctionDeclaration => {
             write_indent(output, outer_depth, indentation);
             writeln!(output, "{marker}: {{").unwrap();
             write_indent(output, qml_indent, indentation);
@@ -268,19 +289,25 @@ mod tests {
             }
         "#};
 
+        let synthetic = document(source);
+
         assert_eq!(
-            document(source),
-            Document {
-                source: indoc! {r#"
-                    /* __qmljsfmt_0_start */
-                    function __qmljsfmt_0() {
-                        ___ = parent.width+1;
-                    }
-                    /* __qmljsfmt_0_end */
-                "#}
-                .to_owned(),
-                indentation: Indentation::Spaces(4),
-                marker_prefix: "__qmljsfmt".to_owned(),
+            synthetic.source,
+            indoc! {r#"
+                /* __qmljsfmt_0_start */
+                function __qmljsfmt_0() {
+                    ___ = parent.width+1;
+                }
+                /* __qmljsfmt_0_end */
+            "#}
+        );
+        assert_eq!(synthetic.indentation, Indentation::Spaces(4));
+        assert_eq!(synthetic.marker_prefix, "__qmljsfmt");
+        assert_eq!(synthetic.sections.len(), 1);
+        assert_eq!(
+            synthetic.sections[0].kind,
+            SectionKind::Expression {
+                scaffold_parentheses: false,
             }
         );
     }
@@ -448,10 +475,10 @@ mod tests {
                 onClicked: prepare(), activate()
             }
         "#};
-        let synthetic = document(source).source;
+        let synthetic = document(source);
 
         assert_eq!(
-            synthetic,
+            synthetic.source,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
                 function __qmljsfmt_0() {
@@ -462,7 +489,13 @@ mod tests {
         );
         assert_eq!(
             line_width(source, "prepare()"),
-            line_width(&synthetic, "prepare()")
+            line_width(&synthetic.source, "prepare()")
+        );
+        assert_eq!(
+            synthetic.sections[0].kind,
+            SectionKind::Expression {
+                scaffold_parentheses: true,
+            }
         );
     }
 

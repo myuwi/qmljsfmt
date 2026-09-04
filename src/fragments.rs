@@ -2,10 +2,16 @@ use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FragmentKind {
-    Expression,
+    Expression(ExpressionKind),
     BindingBlockContents,
     BindingStatement,
     FunctionDeclaration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ExpressionKind {
+    Ordinary,
+    Sequence,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15,7 +21,6 @@ pub(crate) struct Fragment {
     pub(crate) replacement_start: usize,
     pub(crate) qml_depth: usize,
     pub(crate) qml_member_start: usize,
-    pub(crate) parenthesize: bool,
 }
 
 pub(crate) fn discover(source: &str, tree: &tree_sitter::Tree) -> Vec<Fragment> {
@@ -66,7 +71,6 @@ fn fragment_for_node(node: tree_sitter::Node<'_>, qml_depth: usize) -> Option<Fr
                 replacement_start: node.start_byte(),
                 qml_depth,
                 qml_member_start: node.start_byte(),
-                parenthesize: false,
             })
         }
         _ => None,
@@ -75,32 +79,31 @@ fn fragment_for_node(node: tree_sitter::Node<'_>, qml_depth: usize) -> Option<Fr
 
 fn binding_fragment(binding: tree_sitter::Node<'_>, qml_depth: usize) -> Option<Fragment> {
     let value = binding.child_by_field_name("value")?;
-    let (kind, range, parenthesize) = match value.kind() {
+    let (kind, range) = match value.kind() {
         "expression_statement" => {
             let expression = value
                 .named_children(&mut value.walk())
                 .find(|child| child.kind() != "comment")?;
+            let expression_kind = if expression.kind() == "sequence_expression" {
+                ExpressionKind::Sequence
+            } else {
+                ExpressionKind::Ordinary
+            };
             (
-                FragmentKind::Expression,
+                FragmentKind::Expression(expression_kind),
                 expression.start_byte()..code_end(expression),
-                expression.kind() == "sequence_expression",
             )
         }
-        "statement_block" => (
-            FragmentKind::BindingBlockContents,
-            block_contents(value)?,
-            false,
-        ),
+        "statement_block" => (FragmentKind::BindingBlockContents, block_contents(value)?),
         "if_statement" | "with_statement" | "switch_statement" | "try_statement" => (
             FragmentKind::BindingStatement,
             value.start_byte()..code_end(value),
-            false,
         ),
         _ => return None,
     };
     let replacement_start = if matches!(
         kind,
-        FragmentKind::Expression | FragmentKind::BindingStatement
+        FragmentKind::Expression(_) | FragmentKind::BindingStatement
     ) {
         colon_end(binding)?
     } else {
@@ -113,7 +116,6 @@ fn binding_fragment(binding: tree_sitter::Node<'_>, qml_depth: usize) -> Option<
         replacement_start,
         qml_depth,
         qml_member_start: binding.start_byte(),
-        parenthesize,
     })
 }
 
@@ -172,6 +174,8 @@ mod tests {
 
     use super::*;
 
+    const EXPRESSION: FragmentKind = FragmentKind::Expression(ExpressionKind::Ordinary);
+
     fn fragments(source: &str) -> Vec<(FragmentKind, &str)> {
         let tree = crate::qml::parse(source).unwrap();
         discover(source, &tree)
@@ -189,15 +193,20 @@ mod tests {
                 property int count: model.count+1
                 width: parent.width+1
                 onClicked: doThing(foo+1)
+                onReleased: prepare(), activate()
             }
         "#};
 
         assert_eq!(
             fragments(source),
             vec![
-                (FragmentKind::Expression, "model.count+1"),
-                (FragmentKind::Expression, "parent.width+1"),
-                (FragmentKind::Expression, "doThing(foo+1)"),
+                (EXPRESSION, "model.count+1"),
+                (EXPRESSION, "parent.width+1"),
+                (EXPRESSION, "doThing(foo+1)"),
+                (
+                    FragmentKind::Expression(ExpressionKind::Sequence),
+                    "prepare(), activate()",
+                ),
             ]
         );
     }
@@ -222,7 +231,7 @@ mod tests {
                     FragmentKind::BindingBlockContents,
                     " let x=1; function nested() { return x } nested() "
                 ),
-                (FragmentKind::Expression, "parent.y+1"),
+                (EXPRESSION, "parent.y+1"),
             ]
         );
     }
@@ -244,7 +253,7 @@ mod tests {
         assert_eq!(
             fragments(source),
             vec![
-                (FragmentKind::Expression, "function () { return a }"),
+                (EXPRESSION, "function () { return a }"),
                 (FragmentKind::BindingBlockContents, " activate() "),
                 (FragmentKind::BindingStatement, "if (ready) { activate() }"),
             ]

@@ -2,8 +2,8 @@ use std::ops::Range;
 
 use tree_sitter::Node;
 
+use super::{Document, SectionKind};
 use crate::error::{Error, Result};
-use crate::fragments::{Fragment, FragmentKind};
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Replacement {
@@ -14,27 +14,28 @@ pub(crate) struct Replacement {
 /// Each marked region of Oxfmt's output is a valid QML object member, so they are
 /// collected into one throwaway QML document and the QML grammar reports the payload
 /// boundaries exactly.
-pub(super) fn decode(
-    formatted: &str,
-    marker_prefix: &str,
-    fragments: &[Fragment],
-) -> Result<Vec<Replacement>> {
-    let members = find_marked_members(formatted, marker_prefix, fragments.len());
+pub(super) fn decode(formatted: &str, synthetic: &Document) -> Result<Vec<Replacement>> {
+    let members = find_marked_members(
+        formatted,
+        &synthetic.marker_prefix,
+        synthetic.sections.len(),
+    );
     let (document, member_spans) = collect_as_qml(members)?;
     let tree = crate::qml::parse_tree(&document)?;
     let root = tree.root_node();
 
-    let replacements = fragments
+    let replacements = synthetic
+        .sections
         .iter()
         .zip(&member_spans)
         .enumerate()
-        .map(|(index, (fragment, span))| {
+        .map(|(index, (section, span))| {
             let text = member_at(root, span)
-                .and_then(|node| fragment_text(&document, node, fragment))
+                .and_then(|node| fragment_text(&document, node, section.kind))
                 .ok_or_else(|| invalid_output(index))?;
 
             Ok(Replacement {
-                range: fragment.replacement_start..fragment.range.end,
+                range: section.replacement_range.clone(),
                 text,
             })
         })
@@ -99,22 +100,24 @@ fn member_at<'a>(root: Node<'a>, span: &Range<usize>) -> Option<Node<'a>> {
     (node.byte_range() == *span && !node.has_error()).then_some(node)
 }
 
-fn fragment_text(source: &str, member: Node<'_>, fragment: &Fragment) -> Option<String> {
-    match fragment.kind {
-        FragmentKind::Expression => expression_text(source, member, fragment),
-        FragmentKind::BindingStatement => statement_text(source, member),
-        FragmentKind::BindingBlockContents => {
+fn fragment_text(source: &str, member: Node<'_>, kind: SectionKind) -> Option<String> {
+    match kind {
+        SectionKind::Expression {
+            scaffold_parentheses,
+        } => expression_text(source, member, scaffold_parentheses),
+        SectionKind::BindingStatement => statement_text(source, member),
+        SectionKind::BindingBlockContents => {
             let region = function_body(member).and_then(block_inner)?;
             Some(source[region].to_owned())
         }
-        FragmentKind::FunctionDeclaration => {
+        SectionKind::FunctionDeclaration => {
             let region = binding_block(member).and_then(block_inner)?;
             Some(source[region].trim().to_owned())
         }
     }
 }
 
-fn expression_text(source: &str, member: Node<'_>, fragment: &Fragment) -> Option<String> {
+fn expression_text(source: &str, member: Node<'_>, scaffold_parentheses: bool) -> Option<String> {
     let body = function_body(member)?;
     let region = block_inner(body)?;
     let statement = first_non_trivia(body).filter(|node| node.kind() == "expression_statement")?;
@@ -127,7 +130,7 @@ fn expression_text(source: &str, member: Node<'_>, fragment: &Fragment) -> Optio
     let equals = child_of_kind(assignment, "=")?;
 
     let value = assignment.child_by_field_name("right")?;
-    let (payload, parens) = match fragment.parenthesize {
+    let (payload, parens) = match scaffold_parentheses {
         true => (first_non_trivia(value)?, Some(parentheses(value)?)),
         false => (value, None),
     };
@@ -314,8 +317,9 @@ mod tests {
         let source = "Item {\n    width: parent.width\n}\n";
         let tree = crate::qml::parse(source).unwrap();
         let fragments = crate::fragments::discover(source, &tree);
+        let synthetic = crate::synthetic::encode(source, &tree, &fragments);
 
-        let missing = decode("const unrelated = 1;\n", "__qmljsfmt", &fragments).unwrap_err();
+        let missing = decode("const unrelated = 1;\n", &synthetic).unwrap_err();
         assert!(matches!(
             missing,
             Error::InvalidSyntheticOutput { index: 0 }
@@ -324,7 +328,7 @@ mod tests {
         let marker = "__qmljsfmt_0";
         let start = format!("/* {marker}_start */");
         let duplicated = format!("{start}\n{start}\n");
-        let duplicate = decode(&duplicated, "__qmljsfmt", &fragments).unwrap_err();
+        let duplicate = decode(&duplicated, &synthetic).unwrap_err();
         assert!(matches!(
             duplicate,
             Error::InvalidSyntheticOutput { index: 0 }
@@ -332,7 +336,7 @@ mod tests {
 
         let end = format!("/* {marker}_end */");
         let wrong_wrapper = format!("{start}\nconst {marker} = [];\n{end}\n");
-        let malformed = decode(&wrong_wrapper, "__qmljsfmt", &fragments).unwrap_err();
+        let malformed = decode(&wrong_wrapper, &synthetic).unwrap_err();
         assert!(matches!(
             malformed,
             Error::InvalidSyntheticOutput { index: 0 }

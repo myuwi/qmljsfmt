@@ -15,7 +15,7 @@ pub fn format(input: &str) -> Result<String> {
 
     let synthetic = synthetic::encode(input, &tree, &fragments);
     let formatted = oxfmt::format(&synthetic.source, synthetic.indentation)?;
-    let replacements = synthetic::decode(&formatted, &synthetic, &fragments)?;
+    let replacements = synthetic::decode(&formatted, &synthetic)?;
 
     let mut output = input.to_owned();
     for replacement in replacements.into_iter().rev() {
