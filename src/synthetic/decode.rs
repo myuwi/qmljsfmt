@@ -14,7 +14,7 @@ pub(crate) struct Replacement {
 /// Each marked region of Oxfmt's output is a valid QML object member, so they are
 /// collected into one throwaway QML document and the QML grammar reports the payload
 /// boundaries exactly.
-pub(crate) fn extract(
+pub(super) fn decode(
     formatted: &str,
     marker_prefix: &str,
     fragments: &[Fragment],
@@ -315,7 +315,7 @@ mod tests {
         let tree = crate::qml::parse(source).unwrap();
         let fragments = crate::fragments::discover(source, &tree);
 
-        let missing = extract("const unrelated = 1;\n", "__qmljsfmt", &fragments).unwrap_err();
+        let missing = decode("const unrelated = 1;\n", "__qmljsfmt", &fragments).unwrap_err();
         assert!(matches!(
             missing,
             Error::InvalidSyntheticOutput { index: 0 }
@@ -324,7 +324,7 @@ mod tests {
         let marker = "__qmljsfmt_0";
         let start = format!("/* {marker}_start */");
         let duplicated = format!("{start}\n{start}\n");
-        let duplicate = extract(&duplicated, "__qmljsfmt", &fragments).unwrap_err();
+        let duplicate = decode(&duplicated, "__qmljsfmt", &fragments).unwrap_err();
         assert!(matches!(
             duplicate,
             Error::InvalidSyntheticOutput { index: 0 }
@@ -332,7 +332,7 @@ mod tests {
 
         let end = format!("/* {marker}_end */");
         let wrong_wrapper = format!("{start}\nconst {marker} = [];\n{end}\n");
-        let malformed = extract(&wrong_wrapper, "__qmljsfmt", &fragments).unwrap_err();
+        let malformed = decode(&wrong_wrapper, "__qmljsfmt", &fragments).unwrap_err();
         assert!(matches!(
             malformed,
             Error::InvalidSyntheticOutput { index: 0 }

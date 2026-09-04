@@ -1,31 +1,11 @@
 use std::fmt::Write;
 
+use super::{Document, Indentation};
 use crate::fragments::{Fragment, FragmentKind};
 
-pub(crate) const DEFAULT_INDENT_WIDTH: usize = 4;
 const MARKER_PREFIX: &str = "__qmljsfmt";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Indentation {
-    /// One indent unit, always at least one space wide.
-    Spaces(usize),
-    Tabs,
-}
-
-impl Default for Indentation {
-    fn default() -> Self {
-        Self::Spaces(DEFAULT_INDENT_WIDTH)
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct Document {
-    pub(crate) source: String,
-    pub(crate) indentation: Indentation,
-    pub(crate) marker_prefix: String,
-}
-
-pub(crate) fn build(source: &str, tree: &tree_sitter::Tree, fragments: &[Fragment]) -> Document {
+pub(super) fn encode(source: &str, tree: &tree_sitter::Tree, fragments: &[Fragment]) -> Document {
     let indentation = infer_indentation(source, tree);
     let marker_prefix = unique_marker_prefix(source);
     let mut synthetic = String::new();
@@ -275,7 +255,7 @@ mod tests {
     fn document(source: &str) -> Document {
         let tree = crate::qml::parse(source).unwrap();
         let fragments = crate::fragments::discover(source, &tree);
-        build(source, &tree, &fragments)
+        encode(source, &tree, &fragments)
     }
 
     #[test]
