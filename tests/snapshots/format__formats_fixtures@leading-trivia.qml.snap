@@ -1,0 +1,24 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/leading-trivia.qml
+---
+import QtQuick
+
+Item {
+    width: /* explanation */
+        parent.width+1
+    onClicked: // prepare
+        if (ready) { activate() }
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    width: /* explanation */ parent.width + 1
+    onClicked:
+        // prepare
+        if (ready) {
+            activate();
+        }
+}

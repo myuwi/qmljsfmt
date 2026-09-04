@@ -1,0 +1,26 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/comments-moved-past-the-scaffold.qml
+---
+import QtQuick
+
+Item {
+    width: (parent.width /* trailing */)
+    onClicked: (prepare(), activate() /* trailing */)
+    property var handler: function () { return 1 } /* trailing */
+    onPressed: { activate() } /* trailing */
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    width: parent.width /* trailing */
+    onClicked: (prepare(), activate() /* trailing */)
+    property var handler: function () {
+        return 1;
+    } /* trailing */
+    onPressed: {
+        activate();
+    } /* trailing */
+}

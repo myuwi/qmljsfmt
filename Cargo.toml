@@ -12,3 +12,4 @@ tree-sitter-qmljs = "0.3.1"
 
 [dev-dependencies]
 indoc = "2"
+insta = { version = "1", features = ["glob"] }

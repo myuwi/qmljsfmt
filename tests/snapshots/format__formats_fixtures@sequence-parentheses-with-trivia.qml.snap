@@ -1,0 +1,17 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/sequence-parentheses-with-trivia.qml
+---
+import QtQuick
+
+Item {
+    onClicked: /* keep this */
+        prepare(),activate()
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    onClicked: /* keep this */ prepare(), activate()
+}

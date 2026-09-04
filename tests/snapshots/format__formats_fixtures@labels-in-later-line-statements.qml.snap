@@ -1,0 +1,22 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/labels-in-later-line-statements.qml
+---
+import QtQuick
+
+Item {
+    onClicked:
+        if (ready) {
+            _: activate()
+        }
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    onClicked:
+        if (ready) {
+            _: activate();
+        }
+}

@@ -1,0 +1,20 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/commas-in-literals-and-comments.qml
+---
+import QtQuick
+
+Item {
+    property string quoted: "a, //"
+    property string templated: `a, //`
+    property int count: /* a, // b */ model.count+1
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    property string quoted: "a, //"
+    property string templated: `a, //`
+    property int count: /* a, // b */ model.count + 1
+}

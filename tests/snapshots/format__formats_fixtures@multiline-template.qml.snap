@@ -1,0 +1,18 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/multiline-template.qml
+---
+import QtQuick
+
+Item {
+    text: `first
+  second ${value+1}`
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    text: `first
+  second ${value + 1}`
+}

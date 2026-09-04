@@ -1,0 +1,16 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/sequence-expression.qml
+---
+import QtQuick
+
+Item {
+    onClicked: prepare(),activate()
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    onClicked: prepare(), activate()
+}
