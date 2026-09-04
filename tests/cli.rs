@@ -51,12 +51,14 @@ fn passes_stdin_through_to_stdout() {
 }
 
 #[test]
-fn runs_oxfmt_without_changing_qml_yet() {
-    let input = "import QtQuick\n\nItem {\n    width: parent.width+1\n}\n";
-    let output = run(input);
+fn formats_embedded_javascript() {
+    let output = run("import QtQuick\n\nItem {\n    width: parent.width+1\n}\n");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), input);
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "import QtQuick\n\nItem {\n    width: parent.width + 1\n}\n"
+    );
     assert!(output.stderr.is_empty());
 }
 

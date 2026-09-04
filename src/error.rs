@@ -33,6 +33,9 @@ pub enum Error {
 
     #[error("invalid formatted wrapper for fragment {index}")]
     InvalidSyntheticOutput { index: usize },
+
+    #[error("formatting produced invalid QML")]
+    InvalidOutput,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
