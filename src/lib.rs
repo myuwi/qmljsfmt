@@ -1,4 +1,5 @@
 mod error;
+mod extract;
 mod fragments;
 mod oxfmt;
 mod qml;
@@ -14,7 +15,8 @@ pub fn format(input: &str) -> Result<String> {
     }
 
     let synthetic = synthetic::build(input, &tree, &fragments);
-    let _formatted = oxfmt::format(&synthetic.source, synthetic.indentation)?;
+    let formatted = oxfmt::format(&synthetic.source, synthetic.indentation)?;
+    let _replacements = extract::extract(&formatted, &synthetic.marker_prefix, &fragments)?;
 
     Ok(input.to_owned())
 }

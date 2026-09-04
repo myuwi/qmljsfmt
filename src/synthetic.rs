@@ -60,21 +60,24 @@ fn write_fragment(
 
     debug_assert!(qml_indent > 0);
 
-    let outer_depth = if fragment.kind == FragmentKind::BindingBlockContents {
-        qml_indent
-    } else {
-        qml_indent - 1
-    };
     let fragment_source = &source[fragment.range.clone()];
     let leading_trivia = &source[fragment.replacement_start..fragment.range.start];
+    let starts_on_later_line = leading_trivia.contains(['\n', '\r']);
+    let payload_indent =
+        indent_depth_at(source, fragment.range.start, indentation).unwrap_or(qml_indent);
+    let outer_depth = match fragment.kind {
+        FragmentKind::BindingBlockContents => qml_indent,
+        FragmentKind::BindingStatement if starts_on_later_line => payload_indent.saturating_sub(1),
+        _ => qml_indent - 1,
+    };
 
     open_scopes(output, outer_depth, indentation);
     write_indent(output, outer_depth, indentation);
-    write_section_delimiter(output, marker, "start");
+    writeln!(output, "/* {marker}_start */").unwrap();
 
     match fragment.kind {
         FragmentKind::Expression => {
-            // Parentheses keep sequence expressions from splitting the property.
+            // Parentheses keep sequence expressions from splitting the assignment.
             // TODO: Width compensation assumes Oxfmt keeps the value and the synthetic
             // punctuation on one line. If it wraps them, the compensation applies to
             // the wrong line.
@@ -94,14 +97,17 @@ fn write_fragment(
             };
 
             write_indent(output, outer_depth, indentation);
-            writeln!(output, "const {marker} = {{").unwrap();
+            writeln!(output, "function {marker}() {{").unwrap();
             write_indent(output, qml_indent, indentation);
             let prefix_width = binding_prefix_width(source, fragment);
-            write_binding_prefix_placeholder(output, prefix_width.saturating_sub(scaffold_width));
+            write_assignment_prefix_placeholder(
+                output,
+                prefix_width.saturating_sub(scaffold_width),
+            );
             output.push_str(leading_trivia);
-            writeln!(output, "{open}{fragment_source}{close},").unwrap();
+            writeln!(output, "{open}{fragment_source}{close};").unwrap();
             write_indent(output, outer_depth, indentation);
-            output.push_str("};\n");
+            output.push_str("}\n");
         }
         FragmentKind::BindingBlockContents => {
             write_indent(output, qml_indent, indentation);
@@ -111,9 +117,13 @@ fn write_fragment(
         }
         FragmentKind::BindingStatement => {
             write_indent(output, outer_depth, indentation);
-            writeln!(output, "function {marker}() {{").unwrap();
-            write_indent(output, qml_indent, indentation);
-            write_binding_prefix_placeholder(output, binding_prefix_width(source, fragment));
+            if starts_on_later_line {
+                write!(output, "function {marker}() {{").unwrap();
+            } else {
+                writeln!(output, "function {marker}() {{").unwrap();
+                write_indent(output, qml_indent, indentation);
+                write_binding_prefix_placeholder(output, binding_prefix_width(source, fragment));
+            }
             output.push_str(leading_trivia);
             output.push_str(fragment_source);
             output.push('\n');
@@ -132,12 +142,8 @@ fn write_fragment(
     }
 
     write_indent(output, outer_depth, indentation);
-    write_section_delimiter(output, marker, "end");
+    writeln!(output, "/* {marker}_end */").unwrap();
     close_scopes(output, outer_depth, indentation);
-}
-
-fn write_section_delimiter(output: &mut String, marker: &str, boundary: &str) {
-    writeln!(output, "/* {marker}_{boundary} */").unwrap();
 }
 
 fn open_scopes(output: &mut String, count: usize, indentation: Indentation) {
@@ -170,6 +176,15 @@ fn write_binding_prefix_placeholder(output: &mut String, width: usize) {
 
     output.extend(std::iter::repeat_n('_', underscores));
     output.push(':');
+}
+
+/// Writes an assignment placeholder using the remaining width budget.
+fn write_assignment_prefix_placeholder(output: &mut String, width: usize) {
+    // `_ =` is the narrowest assignment prefix after formatting.
+    let underscores = width.saturating_sub(2).max(1);
+
+    output.extend(std::iter::repeat_n('_', underscores));
+    output.push_str(" =");
 }
 
 fn binding_prefix_width(source: &str, fragment: &Fragment) -> usize {
@@ -278,9 +293,9 @@ mod tests {
             Document {
                 source: indoc! {r#"
                     /* __qmljsfmt_0_start */
-                    const __qmljsfmt_0 = {
-                        ____: parent.width+1,
-                    };
+                    function __qmljsfmt_0() {
+                        ___ = parent.width+1;
+                    }
                     /* __qmljsfmt_0_end */
                 "#}
                 .to_owned(),
@@ -308,9 +323,9 @@ mod tests {
 
         let expected = indoc! {r#"
             /* __qmljsfmt_0_start */
-            const __qmljsfmt_0 = {
-                ____: parent.width+1,
-            };
+            function __qmljsfmt_0() {
+                ___ = parent.width+1;
+            }
             /* __qmljsfmt_0_end */
 
             /* __qmljsfmt_1_start */
@@ -356,9 +371,9 @@ mod tests {
             indoc! {r#"
                 {
                     /* __qmljsfmt_0_start */
-                    const __qmljsfmt_0 = {
-                        ____: parent.width+1,
-                    };
+                    function __qmljsfmt_0() {
+                        ___ = parent.width+1;
+                    }
                     /* __qmljsfmt_0_end */
                 }
             "#}
@@ -386,9 +401,9 @@ mod tests {
                 {
                     {
                         /* __qmljsfmt_0_start */
-                        const __qmljsfmt_0 = {
-                            ____: parent.width+1,
-                        };
+                        function __qmljsfmt_0() {
+                            ___ = parent.width+1;
+                        }
                         /* __qmljsfmt_0_end */
                     }
                 }
@@ -412,9 +427,9 @@ mod tests {
             synthetic.source,
             indoc! {"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                \t____: parent.width+1,
-                };
+                function __qmljsfmt_0() {
+                \t___ = parent.width+1;
+                }
                 /* __qmljsfmt_0_end */
             "}
         );
@@ -436,9 +451,9 @@ mod tests {
             synthetic.source,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    ____: parent.width+1,
-                };
+                function __qmljsfmt_0() {
+                    ___ = parent.width+1;
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );
@@ -459,9 +474,9 @@ mod tests {
             synthetic,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    ______: (prepare(), activate()),
-                };
+                function __qmljsfmt_0() {
+                    _____ = (prepare(), activate());
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );
@@ -502,10 +517,10 @@ mod tests {
             document(source).source,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    __________________:
-                        model.count+1,
-                };
+                function __qmljsfmt_0() {
+                    _________________ =
+                        model.count+1;
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );
@@ -527,9 +542,9 @@ mod tests {
             synthetic,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    _______________: parent.width+1,
-                };
+                function __qmljsfmt_0() {
+                    ______________ = parent.width+1;
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );
@@ -554,10 +569,10 @@ mod tests {
             document(source).source,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    _____: /* keep this */
-                        parent.width+1,
-                };
+                function __qmljsfmt_0() {
+                    ____ = /* keep this */
+                        parent.width+1;
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );
@@ -575,7 +590,7 @@ mod tests {
         let synthetic = document(source);
 
         assert_eq!(synthetic.marker_prefix, "__qmljsfmt_");
-        assert!(synthetic.source.contains("const __qmljsfmt__0"));
+        assert!(synthetic.source.contains("function __qmljsfmt__0()"));
     }
 
     #[test]
@@ -593,11 +608,11 @@ mod tests {
             document(source).source,
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    ____________________: `first
+                function __qmljsfmt_0() {
+                    ___________________ = `first
                   significant whitespace
-                last`,
-                };
+                last`;
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );
@@ -618,9 +633,9 @@ mod tests {
             crate::oxfmt::format(&synthetic.source, synthetic.indentation).unwrap(),
             indoc! {r#"
                 /* __qmljsfmt_0_start */
-                const __qmljsfmt_0 = {
-                    ____: parent.width + 1,
-                };
+                function __qmljsfmt_0() {
+                    ___ = parent.width + 1;
+                }
                 /* __qmljsfmt_0_end */
             "#}
         );

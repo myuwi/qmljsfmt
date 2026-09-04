@@ -30,6 +30,9 @@ pub enum Error {
 
     #[error("oxfmt produced invalid UTF-8")]
     InvalidOxfmtOutput(#[source] FromUtf8Error),
+
+    #[error("invalid formatted wrapper for fragment {index}")]
+    InvalidSyntheticOutput { index: usize },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

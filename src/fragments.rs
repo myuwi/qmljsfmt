@@ -82,18 +82,20 @@ fn binding_fragment(binding: tree_sitter::Node<'_>, qml_depth: usize) -> Option<
                 .find(|child| child.kind() != "comment")?;
             (
                 FragmentKind::Expression,
-                expression.byte_range(),
+                expression.start_byte()..code_end(expression),
                 expression.kind() == "sequence_expression",
             )
         }
         "statement_block" => (
             FragmentKind::BindingBlockContents,
-            value.start_byte() + 1..value.end_byte() - 1,
+            block_contents(value)?,
             false,
         ),
-        "if_statement" | "switch_statement" | "try_statement" => {
-            (FragmentKind::BindingStatement, value.byte_range(), false)
-        }
+        "if_statement" | "switch_statement" | "try_statement" => (
+            FragmentKind::BindingStatement,
+            value.start_byte()..code_end(value),
+            false,
+        ),
         _ => return None,
     };
     let replacement_start = if matches!(
@@ -113,6 +115,29 @@ fn binding_fragment(binding: tree_sitter::Node<'_>, qml_depth: usize) -> Option<
         qml_member_start: binding.start_byte(),
         parenthesize,
     })
+}
+
+fn block_contents(block: tree_sitter::Node<'_>) -> Option<Range<usize>> {
+    let open = block.child(0)?;
+    let close = last_code_child(block)?;
+
+    (open.kind() == "{" && close.kind() == "}").then(|| open.end_byte()..close.start_byte())
+}
+
+/// Excludes trailing comments, which the grammar attaches to the node they follow.
+fn code_end(node: tree_sitter::Node<'_>) -> usize {
+    match last_code_child(node) {
+        Some(child) if child.end_byte() == node.end_byte() => code_end(child),
+        Some(child) => child.end_byte(),
+        None => node.end_byte(),
+    }
+}
+
+fn last_code_child(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    (0..node.child_count())
+        .rev()
+        .filter_map(|index| node.child(index))
+        .find(|child| child.kind() != "comment")
 }
 
 fn colon_end(node: tree_sitter::Node<'_>) -> Option<usize> {
@@ -198,6 +223,30 @@ mod tests {
                     " let x=1; function nested() { return x } nested() "
                 ),
                 (FragmentKind::Expression, "parent.y+1"),
+            ]
+        );
+    }
+
+    /// The grammar attaches a trailing comment to the block it follows, so the naive
+    /// range would slice into the comment and hand Oxfmt an unterminated one.
+    #[test]
+    fn excludes_trailing_comments_from_ranges() {
+        let source = indoc! {r#"
+            import QtQuick
+
+            Item {
+                property var handler: function () { return a } /* c */
+                onPressed: { activate() } /* c */
+                onClicked: if (ready) { activate() } /* c */
+            }
+        "#};
+
+        assert_eq!(
+            fragments(source),
+            vec![
+                (FragmentKind::Expression, "function () { return a }"),
+                (FragmentKind::BindingBlockContents, " activate() "),
+                (FragmentKind::BindingStatement, "if (ready) { activate() }"),
             ]
         );
     }
