@@ -8,6 +8,10 @@ pub use error::{Error, Result};
 
 pub fn format(input: &str) -> Result<String> {
     let tree = qml::parse(input)?;
+    if tree.root_node().has_error() {
+        return Err(Error::InvalidQml);
+    }
+
     let fragments = fragments::discover(input, &tree);
     if fragments.is_empty() {
         return Ok(input.to_owned());
@@ -22,7 +26,7 @@ pub fn format(input: &str) -> Result<String> {
         output.replace_range(replacement.range, &replacement.text);
     }
 
-    if qml::parse_tree(&output)?.root_node().has_error() {
+    if qml::parse(&output)?.root_node().has_error() {
         return Err(Error::InvalidOutput);
     }
 

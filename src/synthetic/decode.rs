@@ -21,7 +21,7 @@ pub(super) fn decode(formatted: &str, synthetic: &Document) -> Result<Vec<Replac
         synthetic.sections.len(),
     );
     let (document, member_spans) = collect_as_qml(members)?;
-    let tree = crate::qml::parse_tree(&document)?;
+    let tree = crate::qml::parse(&document)?;
     let root = tree.root_node();
 
     let replacements = synthetic

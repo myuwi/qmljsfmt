@@ -6,9 +6,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-
     #[error("failed to configure the QML parser")]
     ParserLanguage(#[from] tree_sitter::LanguageError),
 

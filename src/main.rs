@@ -2,7 +2,7 @@ use std::error::Error;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-use qmljsfmt::Result;
+type CliResult<T> = Result<T, Box<dyn Error>>;
 
 fn main() -> ExitCode {
     match run() {
@@ -21,7 +21,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> CliResult<()> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
 
