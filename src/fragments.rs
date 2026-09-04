@@ -91,7 +91,7 @@ fn binding_fragment(binding: tree_sitter::Node<'_>, qml_depth: usize) -> Option<
             block_contents(value)?,
             false,
         ),
-        "if_statement" | "switch_statement" | "try_statement" => (
+        "if_statement" | "with_statement" | "switch_statement" | "try_statement" => (
             FragmentKind::BindingStatement,
             value.start_byte()..code_end(value),
             false,
@@ -315,6 +315,7 @@ mod tests {
                     FragmentKind::BindingStatement,
                     "try { save() } catch (error) { report(error) }"
                 ),
+                (FragmentKind::BindingStatement, "with (context) reset()"),
             ]
         );
     }

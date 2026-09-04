@@ -1,0 +1,18 @@
+---
+source: tests/format.rs
+expression: before_and_after
+input_file: tests/fixtures/direct-with-statement.qml
+---
+import QtQuick
+
+Item {
+    onCanceled: with (context) { reset(foo+1) }
+}
+=== formatted ===
+import QtQuick
+
+Item {
+    onCanceled: with (context) {
+        reset(foo + 1);
+    }
+}
