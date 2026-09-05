@@ -7,21 +7,7 @@ pub(crate) use decode::Replacement;
 
 use crate::error::Result;
 use crate::fragments::Fragment;
-
-pub(crate) const DEFAULT_INDENT_WIDTH: usize = 4;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Indentation {
-    /// One indent unit, always at least one space wide.
-    Spaces(usize),
-    Tabs,
-}
-
-impl Default for Indentation {
-    fn default() -> Self {
-        Self::Spaces(DEFAULT_INDENT_WIDTH)
-    }
-}
+use crate::indentation::Indentation;
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Document {

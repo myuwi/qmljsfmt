@@ -1,12 +1,13 @@
 use std::fmt::Write;
 
-use super::{Document, Indentation, Section, SectionKind};
+use super::{Document, Section, SectionKind};
 use crate::fragments::{ExpressionKind, Fragment, FragmentKind};
+use crate::indentation::{self, Indentation};
 
 const MARKER_PREFIX: &str = "__qmljsfmt";
 
 pub(super) fn encode(source: &str, tree: &tree_sitter::Tree, fragments: &[Fragment]) -> Document {
-    let indentation = infer_indentation(source, tree);
+    let indentation = indentation::infer(source, tree);
     let marker_prefix = unique_marker_prefix(source);
     let mut synthetic = String::new();
     let mut sections = Vec::with_capacity(fragments.len());
@@ -54,7 +55,7 @@ fn write_fragment(
 ) {
     debug_assert!(fragment.qml_depth > 0);
 
-    let qml_indent = indent_depth_at(source, fragment.qml_member_start, indentation)
+    let qml_indent = indentation::depth_at(source, fragment.qml_member_start, indentation)
         .unwrap_or(fragment.qml_depth);
 
     debug_assert!(qml_indent > 0);
@@ -63,7 +64,7 @@ fn write_fragment(
     let leading_trivia = &source[fragment.replacement_start..fragment.range.start];
     let starts_on_later_line = leading_trivia.contains(['\n', '\r']);
     let payload_indent =
-        indent_depth_at(source, fragment.range.start, indentation).unwrap_or(qml_indent);
+        indentation::depth_at(source, fragment.range.start, indentation).unwrap_or(qml_indent);
     let outer_depth = match kind {
         SectionKind::BindingBlockContents => qml_indent,
         SectionKind::BindingStatement if starts_on_later_line => payload_indent.saturating_sub(1),
@@ -189,18 +190,8 @@ fn write_assignment_prefix_placeholder(output: &mut String, width: usize) {
 }
 
 fn binding_prefix_width(source: &str, fragment: &Fragment) -> usize {
-    column_at(source, fragment.replacement_start)
-        .saturating_sub(column_at(source, fragment.qml_member_start))
-}
-
-fn column_at(source: &str, byte: usize) -> usize {
-    line_prefix(source, byte).chars().count()
-}
-
-fn line_prefix(source: &str, byte: usize) -> &str {
-    let before = &source[..byte];
-    let line_start = before.rfind('\n').map_or(0, |newline| newline + 1);
-    &before[line_start..]
+    indentation::column_at(source, fragment.replacement_start)
+        .saturating_sub(indentation::column_at(source, fragment.qml_member_start))
 }
 
 fn unique_marker_prefix(source: &str) -> String {
@@ -209,62 +200,6 @@ fn unique_marker_prefix(source: &str) -> String {
         prefix.push('_');
     }
     prefix
-}
-
-fn infer_indentation(source: &str, tree: &tree_sitter::Tree) -> Indentation {
-    let Some(initializer) = root_initializer(tree) else {
-        return Indentation::default();
-    };
-
-    initializer
-        .named_children(&mut initializer.walk())
-        .filter(|child| child.kind() != "comment")
-        .find_map(|child| indent_unit_at(source, child.start_byte()))
-        .unwrap_or_default()
-}
-
-fn root_initializer(tree: &tree_sitter::Tree) -> Option<tree_sitter::Node<'_>> {
-    let root = tree.root_node().child_by_field_name("root")?;
-    let definition = if root.kind() == "ui_annotated_object" {
-        root.child_by_field_name("definition")?
-    } else {
-        root
-    };
-    definition.child_by_field_name("initializer")
-}
-
-/// One indent unit, measured from a line known to sit exactly one level deep.
-fn indent_unit_at(source: &str, byte: usize) -> Option<Indentation> {
-    let prefix = leading_whitespace(source, byte)?;
-
-    match prefix.as_bytes() {
-        [b'\t'] => Some(Indentation::Tabs),
-        spaces if spaces.iter().all(|byte| *byte == b' ') => {
-            Some(Indentation::Spaces(spaces.len()))
-        }
-        _ => None,
-    }
-}
-
-fn indent_depth_at(source: &str, byte: usize, indentation: Indentation) -> Option<usize> {
-    let prefix = leading_whitespace(source, byte)?;
-    let (unit, width) = match indentation {
-        Indentation::Tabs => (b'\t', 1),
-        Indentation::Spaces(width) => (b' ', width),
-    };
-
-    debug_assert!(width > 0);
-
-    (prefix.bytes().all(|byte| byte == unit) && prefix.len() % width == 0)
-        .then(|| prefix.len() / width)
-}
-
-/// Returns the non-empty whitespace before `byte` on its line.
-fn leading_whitespace(source: &str, byte: usize) -> Option<&str> {
-    let prefix = line_prefix(source, byte);
-
-    (!prefix.is_empty() && prefix.bytes().all(|byte| matches!(byte, b' ' | b'\t')))
-        .then_some(prefix)
 }
 
 #[cfg(test)]

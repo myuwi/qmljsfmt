@@ -1,5 +1,6 @@
 mod error;
 mod fragments;
+mod indentation;
 mod oxfmt;
 mod qml;
 mod synthetic;

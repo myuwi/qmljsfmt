@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Command;
 
 use crate::error::{Error, Result};
-use crate::synthetic::{DEFAULT_INDENT_WIDTH, Indentation};
+use crate::indentation::{DEFAULT_INDENT_WIDTH, Indentation};
 
 pub(crate) fn format(source: &str, indentation: Indentation) -> Result<String> {
     let directory = tempfile::tempdir().map_err(|source| Error::OxfmtIo {
