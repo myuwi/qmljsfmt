@@ -50,8 +50,9 @@
 
       devShells.${system}.default = pkgs.mkShell {
         packages = [
-          pkgs.oxfmt
           rust
+          pkgs.oxfmt
+          pkgs.cargo-insta
           pkgs.nixfmt
         ];
       };
