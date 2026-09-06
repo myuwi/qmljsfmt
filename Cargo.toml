@@ -3,6 +3,7 @@ name = "qmljsfmt"
 version = "0.1.0"
 edition = "2024"
 description = "Formats JavaScript embedded in QML documents"
+license = "ISC"
 
 [dependencies]
 tempfile = "3"
