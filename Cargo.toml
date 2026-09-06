@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Formats JavaScript embedded in QML documents"
 license = "ISC"
+repository = "https://github.com/myuwi/qmljsfmt"
 
 [dependencies]
 tempfile = "3"

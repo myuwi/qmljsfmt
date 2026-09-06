@@ -27,6 +27,7 @@ naersk.buildPackage {
 
     meta = {
       description = "Formats JavaScript embedded in QML documents";
+      license = lib.licenses.isc;
       mainProgram = "qmljsfmt";
     };
   };
