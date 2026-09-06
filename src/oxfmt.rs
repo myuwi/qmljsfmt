@@ -1,5 +1,7 @@
 use std::fs;
-use std::process::Command;
+use std::io::{self, Write};
+use std::path::Path;
+use std::process::{Command, Output, Stdio};
 
 use crate::error::{Error, Result};
 use crate::indentation::{DEFAULT_INDENT_WIDTH, Indentation};
@@ -10,7 +12,6 @@ pub(crate) fn format(source: &str, indentation: Indentation) -> Result<String> {
         source,
     })?;
     let config_path = directory.path().join(".oxfmtrc.json");
-    let source_path = directory.path().join("synthetic.ts");
     let (tab_width, use_tabs) = match indentation {
         Indentation::Spaces(width) => (width, false),
         Indentation::Tabs => (DEFAULT_INDENT_WIDTH, true),
@@ -21,21 +22,11 @@ pub(crate) fn format(source: &str, indentation: Indentation) -> Result<String> {
         operation: "write oxfmt configuration",
         source,
     })?;
-    fs::write(&source_path, source).map_err(|source| Error::OxfmtIo {
-        operation: "write synthetic TypeScript",
+
+    let output = run(source, &config_path, directory.path()).map_err(|source| Error::OxfmtIo {
+        operation: "run oxfmt",
         source,
     })?;
-
-    let output = Command::new("oxfmt")
-        .arg("--config")
-        .arg(config_path)
-        .arg("synthetic.ts")
-        .current_dir(directory.path())
-        .output()
-        .map_err(|source| Error::OxfmtIo {
-            operation: "run oxfmt",
-            source,
-        })?;
 
     if !output.status.success() {
         return Err(Error::OxfmtFailed {
@@ -44,11 +35,28 @@ pub(crate) fn format(source: &str, indentation: Indentation) -> Result<String> {
         });
     }
 
-    let formatted = fs::read(source_path).map_err(|source| Error::OxfmtIo {
-        operation: "read formatted TypeScript",
-        source,
-    })?;
-    String::from_utf8(formatted).map_err(Error::InvalidOxfmtOutput)
+    String::from_utf8(output.stdout).map_err(Error::InvalidOxfmtOutput)
+}
+
+fn run(source: &str, config_path: &Path, directory: &Path) -> io::Result<Output> {
+    let mut child = Command::new("oxfmt")
+        .arg("--config")
+        .arg(config_path)
+        .arg("--stdin-filepath")
+        .arg("synthetic.ts")
+        .current_dir(directory)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    child
+        .stdin
+        .take()
+        .expect("oxfmt stdin should be piped")
+        .write_all(source.as_bytes())?;
+
+    child.wait_with_output()
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ With Cargo:
 cargo install --path .
 ```
 
-When installed with Cargo, `oxfmt` must be available on `PATH`. The Nix package includes it.
+When installed with Cargo, an `oxfmt` with stdin support must be available on `PATH`. The Nix package includes it.
 
 ## Neovim integration with [conform.nvim](https://github.com/stevearc/conform.nvim)
 

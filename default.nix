@@ -11,7 +11,6 @@ naersk.buildPackage {
 
   src = ./.;
 
-  # oxfmt is needed to run the tests, makeWrapper to bake it into the binary.
   nativeBuildInputs = [
     makeWrapper
     oxfmt
@@ -19,7 +18,6 @@ naersk.buildPackage {
   doCheck = true;
 
   overrideMain = _: {
-    # qmljsfmt runs oxfmt as a subprocess and tracks one exact version of it.
     postInstall = ''
       wrapProgram $out/bin/qmljsfmt \
         --prefix PATH : ${lib.makeBinPath [ oxfmt ]}
