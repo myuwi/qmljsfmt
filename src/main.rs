@@ -123,6 +123,7 @@ fn walk(paths: &[PathBuf]) -> CliResult<Vec<PathBuf>> {
 
         let entries = WalkBuilder::new(path)
             .follow_links(false)
+            .hidden(false)
             .require_git(false)
             .sort_by_file_path(Path::cmp)
             .build();
