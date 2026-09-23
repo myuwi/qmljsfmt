@@ -2,12 +2,21 @@
 
 Formats JavaScript embedded in QML documents using [Oxfmt](https://oxc.rs/docs/guide/usage/formatter.html).
 
-Reads one complete QML document from stdin and writes the result to stdout.
-
 ## Usage
 
-```sh
-cat input.qml | qmljsfmt > output.qml
+```
+Formats JavaScript embedded in QML documents
+
+Usage: qmljsfmt [OPTIONS] [PATH]...
+
+Arguments:
+  [PATH]...  Files and directories to format, or `-` for stdin [default: .]
+
+Options:
+  -c, --check    Check if files are formatted
+  -w, --write    Rewrite files in place (default)
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 ## Installation
@@ -36,6 +45,7 @@ require("conform").setup({
   formatters = {
     qmljsfmt = {
       command = "qmljsfmt",
+      args = { "-" },
     },
   },
 })
